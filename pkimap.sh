@@ -211,13 +211,27 @@ split_repo () {
       openssl x509 -text -in "${x509_temp}" > "${x509_text}"
       rm "${x509_temp}"
       shash="$(openssl x509 -noout -subject_hash -in "${x509_text}")"
-      sha512="$(sha 512 "${x509_text}")"
-      if sha 512 ${shash}.*.pem 2> /dev/null | grep -q "${sha512}"; then
+      issuer="$(openssl x509 -noout -issuer -in "${x509_text}")"
+      subject="$(openssl x509 -noout -subject -in "${x509_text}")"
+
+      # Check for self-signed certificates
+      if [ "$issuer" = "$subject" ]; then
+        echo "Self-signed certificate: ${x509_text}"
+        # You can decide what to do here, e.g., delete the file or move it somewhere else
         rm -f "${x509_text}"
       else
-        count="$(ls "${shash}".* 2> /dev/null | wc -l | awk '{ print $1 }')"
-        moveto="${work_dir}/${shash}.${count}.pem"
-        mv "${x509_text}" "${moveto}"
+        # Check for already processed certificates to avoid loops
+        if grep -q "^${shash}$" seen_certs; then
+          echo "Loop detected: ${x509_text}"
+          # Decide what to do here
+          rm -f "${x509_text}"
+        else
+          echo "${shash}" >> seen_certs
+          sha512="$(sha 512 "${x509_text}")"
+          count="$(ls "${shash}".* 2> /dev/null | wc -l | awk '{ print $1 }')"
+          moveto="${work_dir}/${shash}.${count}.pem"
+          mv "${x509_text}" "${moveto}"
+        fi
       fi
     fi
   done < "${1}"
